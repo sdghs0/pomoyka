@@ -127,9 +127,9 @@ jobs:
           
       - name: Upload to release
         run: |
-          gh release create latest --title "Latest pomoyka playlists" \
-             --notes "Automatically updated playlists from the I2P network. Last update: $(date)" \
-             || gh release edit latest --notes "Automatically updated playlists from the I2P network. Last update: $(date)"
+          gh release create latest --title "Latest pomoyka lists" \
+             --notes "Automatically updated lists from the I2P network. Last update: $(date)" \
+             || gh release edit latest --notes "Automatically updated lists from the I2P network. Last update: $(date)"
           
           gh release upload latest ace.all.tag.iproxy.m3u as.all.tag.iproxy.m3u ace.all.tag.iproxy_mod.m3u as.all.tag.iproxy_mod.m3u
         env:
