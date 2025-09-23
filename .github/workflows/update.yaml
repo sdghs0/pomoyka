@@ -1,0 +1,141 @@
+name: Update playlists
+
+on:
+  schedule:
+    - cron: "0 */8 * * *"
+  workflow_dispatch:
+
+jobs:
+  fetch-playlists:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Install i2pd
+        run: |
+          sudo add-apt-repository ppa:purplei2p/i2pd
+          sudo apt update
+          sudo apt install i2pd
+          
+      - name: Configure i2pd with better tunnel settings
+        run: |
+          sudo mkdir -p /var/lib/i2pd/addressbook
+          
+          # Make configuration file
+          sudo tee /etc/i2pd/i2pd.conf > /dev/null << 'EOF'
+          # Basic configuration
+          log = true
+          logfile = /var/log/i2pd/i2pd.log
+          loglevel = info
+          ipv4 = true
+          ipv6 = false
+          
+          # Bandwidth settings for limited environment
+          bandwidth = L
+          share = 25
+          
+          # Tunnel settings for better connectivity
+          [limits]
+          transittunnels = 1000
+          
+          [exploratory]
+          inbound.length = 1
+          outbound.length = 1
+          
+          # HTTP Proxy with longer timeouts
+          [httpproxy]
+          enabled = true
+          address = 127.0.0.1
+          port = 4444
+          inbound.length = 1
+          outbound.length = 1
+          
+          # Addressbook subscriptions
+          [addressbook]
+          defaulturl = http://shx5vqsw7usdaunyzr2qmes2fq37oumybpudrd4jjj4e4vk4uusa.b32.i2p/hosts.txt
+          subscriptions = http://nytzrhrjjfsutowojvxi7hphesskpqqr65wpistz6wa7cpajhp7a.b32.i2p/hosts-all.txt,http://shx5vqsw7usdaunyzr2qmes2fq37oumybpudrd4jjj4e4vk4uusa.b32.i2p/hosts.txt
+          EOF
+          
+          sudo chown -R i2pd:i2pd /var/lib/i2pd
+
+      - name: Stop i2pd service
+        if: always()
+        run: |
+          sudo systemctl stop i2pd
+
+      - name: Start i2pd and wait for network ready
+        run: |
+          sudo systemctl restart i2pd
+          sleep 60
+          
+      - name: Download playlist file
+        run: |
+          echo "Downloading ace.all.tag.iproxy.m3u..."
+          timeout 300 curl -L -v -o ace.all.tag.iproxy.m3u -x http://127.0.0.1:4444 \
+               --connect-timeout 60 --max-time 300 \
+               -H "Connection: close" \
+               "http://omt56v4jxa4hurbwk44vqbbcwn3eavuynyc24c25cy7grucjh24q.b32.i2p/trash/ttv-list/ace.all.tag.iproxy.m3u"
+
+      - name: Download playlist file
+        run: |  
+          echo "Downloading as.all.tag.iproxy.m3u..."
+          timeout 300 curl -L -v -o as.all.tag.iproxy.m3u -x http://127.0.0.1:4444 \
+               --connect-timeout 60 --max-time 300 \
+               -H "Connection: close" \
+               "http://omt56v4jxa4hurbwk44vqbbcwn3eavuynyc24c25cy7grucjh24q.b32.i2p/trash/ttv-list/as.all.tag.iproxy.m3u"
+
+      - name: Download playlist file
+        run: |
+          echo "Downloading ace.all.tag.iproxy_mod.m3u..."
+          timeout 300 curl -L -v -o ace.all.tag.iproxy_mod.m3u -x http://127.0.0.1:4444 \
+               --connect-timeout 60 --max-time 300 \
+               -H "Connection: close" \
+               "http://omt56v4jxa4hurbwk44vqbbcwn3eavuynyc24c25cy7grucjh24q.b32.i2p/trash/ttv-list/ace.all.tag.iproxy.m3u?ip=192.168.39.161:6878&format=hls"
+
+      - name: Download playlist file
+        run: |
+          echo "Downloading as.all.tag.iproxy_mod.m3u..."
+          timeout 300 curl -L -v -o as.all.tag.iproxy_mod.m3u -x http://127.0.0.1:4444 \
+               --connect-timeout 60 --max-time 300 \
+               -H "Connection: close" \
+               "http://omt56v4jxa4hurbwk44vqbbcwn3eavuynyc24c25cy7grucjh24q.b32.i2p/trash/ttv-list/as.all.tag.iproxy.m3u?ip=192.168.39.161:6878&format=hls"
+
+      - name: Download check
+        run: |
+          for file in ace.all.tag.iproxy.m3u as.all.tag.iproxy.m3u ace.all.tag.iproxy_mod.m3u as.all.tag.iproxy_mod.m3u; do
+            if [ ! -s "$file" ] || grep -q "Proxy error\|Host not found" "$file"; then
+              echo "Failed to download $file or got proxy error"
+              cat "$file" || echo "File $file is empty or missing"
+              exit 1
+            fi
+            echo "Successfully downloaded $file ($(wc -l < "$file") lines)"
+          done
+          
+      - name: Delete existing release assets
+        continue-on-error: true
+        run: |
+          gh release delete-asset latest ace.all.tag.iproxy.m3u -y || true
+          gh release delete-asset latest as.all.tag.iproxy.m3u -y || true
+          gh release delete-asset latest ace.all.tag.iproxy_mod.m3u -y || true
+          gh release delete-asset latest as.all.tag.iproxy_mod.m3u -y || true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Upload to release
+        run: |
+          gh release create latest --title "Latest pomoyka playlists" \
+             --notes "Automatically updated playlists from the I2P network. Last update: $(date)" \
+             || gh release edit latest --notes "Automatically updated playlists from the I2P network. Last update: $(date)"
+          
+          gh release upload latest ace.all.tag.iproxy.m3u as.all.tag.iproxy.m3u ace.all.tag.iproxy_mod.m3u as.all.tag.iproxy_mod.m3u
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          
+      - name: Stop i2pd service
+        if: always()
+        run: |
+          sudo systemctl stop i2pd
